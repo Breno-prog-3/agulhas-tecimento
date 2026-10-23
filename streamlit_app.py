@@ -94,8 +94,7 @@ with tab_consulta:
     materias = opcoes_coluna(df, "materia_prima") if len(df) else []
     materia = f4.selectbox("Matéria-prima", ["Todas"] + materias)
     vis = df.copy()
-
-if termo:
+    if termo:
         t = termo.lower()
         vis = vis[vis["modelo_produzido"].astype(str).str.lower().str.contains(t, na=False) | vis["tear"].astype(str).str.contains(t, na=False)]
     if produto != "Todos": vis = vis[vis["produto"] == produto]
@@ -178,7 +177,18 @@ with tab_prever:
                 p_largura = c3.number_input("Largura (cm)", min_value=0.0, step=0.5, key="p_largura")
                 p_altura = c4.number_input("Altura (cm)", min_value=0.0, step=0.5, key="p_altura")
                 c5,c6,c7,c8 = st.columns(4)
-                p_produto = c5.selectbox("Produto", opcoes_coluna(treino,"produto"), key="p_produto")
+                produtos_existentes = opcoes_coluna(treino, "produto")
+                p_produto = c5.selectbox(
+                    "Produto",
+                    produtos_existentes + ["OUTRO / NOVO PRODUTO"],
+                    key="p_produto"
+                )
+                if p_produto == "OUTRO / NOVO PRODUTO":
+                    p_produto = c5.text_input(
+                        "Informe o produto novo",
+                        key="p_produto_novo",
+                        help="Produto sem registro histórico. A regressão usará os demais parâmetros informados."
+                    ).strip().upper()
                 p_materia = c6.selectbox("Matéria-prima", opcoes_coluna(treino,"materia_prima"), key="p_materia")
                 p_cor = c7.selectbox("Cor", opcoes_coluna(treino,"cor"), key="p_cor")
                 p_ponto = c8.selectbox("Ponto", opcoes_coluna(treino,"ponto"), key="p_ponto")
@@ -188,6 +198,21 @@ with tab_prever:
                 p_elastano = c11.selectbox("Elastano/elástico", opcoes_coluna(treino,"elastano"), key="p_elastano")
                 calcular = st.form_submit_button("Estimar agulhas por centímetro", type="primary")
             if calcular:
-                entrada = pd.DataFrame([{"tear":p_tear,"gauge":p_gauge,"largura":p_largura,"altura":p_altura,"produto":p_produto,"materia_prima":p_materia,"cor":p_cor,"ponto":p_ponto,"estrutura":p_estrutura,"separacao":p_separacao,"elastano":p_elastano}])[FEATURES]
-                previsao = float(modelo_regressao.predict(entrada)[0])
-                st.metric("Estimativa de agulhas por centímetro", f"{previsao:.2f} agulhas/cm")
+                if not str(p_produto).strip():
+                    st.error("Informe o nome do produto novo para realizar a estimativa.")
+                else:
+                    entrada = pd.DataFrame([{"tear":p_tear,"gauge":p_gauge,"largura":p_largura,"altura":p_altura,"produto":p_produto,"materia_prima":p_materia,"cor":p_cor,"ponto":p_ponto,"estrutura":p_estrutura,"separacao":p_separacao,"elastano":p_elastano}])[FEATURES]
+                    previsao = float(modelo_regressao.predict(entrada)[0])
+                    st.metric("Estimativa de agulhas por centímetro", f"{previsao:.2f} agulhas/cm")
+                    if p_produto not in treino["produto"].astype(str).unique():
+                        st.info(
+                            "Esse produto não possui registros próprios na base. "
+                            "A estimativa foi calculada pela regressão linear usando os outros parâmetros "
+                            "e os padrões aprendidos nos registros existentes; portanto, é uma estimativa "
+                            "mais incerta para uma categoria inédita."
+                        )
+                if previsao <= 0: st.warning("A estimativa ficou em zero ou abaixo; confira os dados e a representatividade da base.")
+                st.caption("Estimativa estatística baseada nos registros disponíveis; pode apresentar erro, sobretudo com poucos dados.")
+
+st.divider()
+st.caption("Confira a base inicial com a fonte original antes de usar em produção. SQLite local pode não persistir dados em todos os ambientes de hospedagem.")
